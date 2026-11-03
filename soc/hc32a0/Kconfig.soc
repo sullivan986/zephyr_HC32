@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config SOC_FAMILY_XHSC
+	bool
+	help
+	  XiaoHua Semiconductor (XHSC, formerly HDSC) HC32 MCU family.
+
+config SOC_SERIES_HC32A0
+	bool
+	select ARM
+	select SOC_FAMILY_XHSC
+	select CPU_CORTEX_M0PLUS
+	select CPU_CORTEX_M_HAS_SYSTICK
+	select HAS_CMSIS_CORE
+	help
+	  XHSC HC32A0 series, ARM Cortex-M0+ based automotive MCUs.
+
+config SOC_HC32A052
+	bool
+	select SOC_SERIES_HC32A0
+	help
+	  XHSC HC32A052: Cortex-M0+, 128 KiB flash, 16 KiB SRAM.
+
+config SOC_FAMILY
+	default "xhsc" if SOC_FAMILY_XHSC
+
+config SOC_SERIES
+	default "hc32a0" if SOC_SERIES_HC32A0
+
+config SOC
+	default "hc32a052" if SOC_HC32A052

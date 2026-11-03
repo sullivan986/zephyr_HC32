@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  XHSC HC32A052 USART configured in asynchronous UART mode.
+
+  The vendor DDL has no port-mux abstraction, so the pins are described
+  directly. Port indices follow GPIOA..GPIOD = 0..3.
+
+compatible: "xhsc,hc32a052-usart"
+
+include: uart-controller.yaml
+
+properties:
+  tx-port:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3]
+    description: GPIO port of the TX pin (0 = GPIOA).
+
+  tx-pin:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    description: TX pin number within tx-port.
+
+  tx-af:
+    type: int
+    default: 1
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+    description: Alternate function mux value for the TX pin.
+
+  rx-port:
+    type: int
+    enum: [0, 1, 2, 3]
+    description: GPIO port of the RX pin (0 = GPIOA). Omit for TX-only.
+
+  rx-pin:
+    type: int
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    description: RX pin number within rx-port.
+
+  rx-af:
+    type: int
+    default: 1
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+    description: Alternate function mux value for the RX pin.

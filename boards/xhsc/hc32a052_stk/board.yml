@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+
+board:
+  name: hc32a052_stk
+  full_name: XHSC HC32A052 Starter Kit
+  vendor: xhsc
+  socs:
+    - name: hc32a052

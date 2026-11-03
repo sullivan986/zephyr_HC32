@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config UART_HC32
+	bool "XHSC HC32A052 USART driver"
+	default y
+	depends on SOC_HC32A052
+	depends on SERIAL
+	select SERIAL_HAS_DRIVER
+	help
+	  Enable the USART driver for XHSC HC32A052 series devices.

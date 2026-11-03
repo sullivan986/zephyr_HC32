@@ -1,0 +1,11 @@
+name: hal_xhsc
+build:
+  cmake: .
+  kconfig: Kconfig
+  # Register this module directory as the out-of-tree SoC, board and devicetree
+  # root. Applications therefore only have to add this module to
+  # ZEPHYR_EXTRA_MODULES; SOC_ROOT, BOARD_ROOT and DTS_ROOT are set for them.
+  settings:
+    soc_root: .
+    board_root: .
+    dts_root: .

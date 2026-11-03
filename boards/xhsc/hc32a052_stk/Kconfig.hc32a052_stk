@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_HC32A052_STK
+	select SOC_HC32A052

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: hc32a052_stk
+name: XHSC HC32A052 Starter Kit
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+ram: 16
+flash: 128
+supported:
+  - uart
+  - gpio
+vendor: xhsc

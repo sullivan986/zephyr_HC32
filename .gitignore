@@ -1,0 +1,14 @@
+# Build output
+build/
+build-*/
+*.o
+*.elf
+*.bin
+*.map
+*.lst
+
+# Editor / tooling leftovers
+.cache/
+compile_commands.json
+.vscode/
+__pycache__/

@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+
+family:
+  - name: xhsc
+    series:
+      - name: hc32a0
+        socs:
+          - name: hc32a052

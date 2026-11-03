@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+
+if SOC_HC32A052
+
+# The clock tree is configured in soc_early_init_hook(), after .data/.bss
+# have been initialised but before any driver runs.
+config SOC_EARLY_INIT_HOOK
+	default y
+
+# IRQ 0..31 are routed to the NVIC.
+config NUM_IRQS
+	default 32
+
+# HCLK after soc_early_init_hook(): 12 MHz RCH / 2 * 64 / 6 = 64 MHz.
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 64000000
+
+endif # SOC_HC32A052
