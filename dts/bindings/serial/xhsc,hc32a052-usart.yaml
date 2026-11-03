@@ -6,6 +6,10 @@ description: |
   The vendor DDL has no port-mux abstraction, so the pins are described
   directly. Port indices follow GPIOA..GPIOD = 0..3.
 
+  Adding "dmas" entries with the names "tx" and "rx" moves transmission and
+  reception to the DMAC when CONFIG_UART_ASYNC_API is enabled. The two cells
+  of each specifier are the DMA channel and the USART request number.
+
 compatible: "xhsc,hc32a052-usart"
 
 include: uart-controller.yaml
@@ -44,3 +48,13 @@ properties:
     default: 1
     enum: [0, 1, 2, 3, 4, 5, 6, 7]
     description: Alternate function mux value for the RX pin.
+
+  dmas:
+    type: phandle-array
+    description: |
+      Optional TX and RX DMA specifiers, in the order given by dma-names.
+
+  dma-names:
+    type: string-array
+    description: |
+      Names of the DMA specifiers. "tx" and "rx" are understood.

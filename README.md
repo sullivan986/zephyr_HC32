@@ -58,14 +58,18 @@ zephyr_HC32/
 ├── dts/bindings/
 │   ├── vendor-prefixes.txt           补上 zephyr 树里没有的 xhsc 前缀
 │   ├── serial/xhsc,hc32a052-usart.yaml
-│   └── can/xhsc,hc32a052-can.yaml
+│   ├── can/xhsc,hc32a052-can.yaml
+│   ├── dma/xhsc,hc32a052-dma.yaml
+│   └── pwm/xhsc,hc32a052-gtim.yaml
 └── drivers/
-    ├── serial/uart_hc32.c            Zephyr UART 驱动（轮询）
-    └── can/can_hc32.c                Zephyr CAN 驱动
+    ├── serial/uart_hc32.c            Zephyr UART 驱动（轮询 + DMA 异步）
+    ├── can/can_hc32.c                Zephyr CAN 驱动
+    ├── dma/dma_hc32.c                Zephyr DMA 驱动（5 通道）
+    └── pwm/pwm_hc32.c                Zephyr PWM 驱动（GTIM0/1）
 ```
 
-当前的驱动与 SoC 支持矩阵：只有 **HC32A052**，目前有 **UART（轮询）** 和
-**CAN（经典 CAN 2.0A/B）**。
+当前的驱动与 SoC 支持矩阵：只有 **HC32A052**，目前有 **UART（轮询 +
+DMA 异步）**、**CAN（经典 CAN 2.0A/B）**、**DMA** 和 **PWM（GTIM）**。
 
 ## 在新项目里复用
 
@@ -213,6 +217,103 @@ PRESC = prescaler - 1
 
 两种编码的位时间长度一致（`1 + prop + phase1 + phase2 == SEG_1 + SEG_2 + 3`），
 所以直接用 `can_set_bitrate()` 即可，不需要手工算寄存器值。
+
+## DMA
+
+RM 第 12 章。5 个同构通道，共享一条中断线（`DMAC_IRQn = 4`），CH0 固定最高
+优先级。每个通道一次搬一段连续内存，源/目的宽度 8/16/32 位，地址可自增或
+固定，触发源可以是软件或下表里的外设请求号。
+
+| 通道 | 典型用途 | 触发号 |
+| --- | --- | --- |
+| 0 | USART0 TX | `0x40` |
+| 1 | USART0 RX | `0x41` |
+| 2 | USART1 TX | `0x42` |
+| 3 | USART1 RX | `0x43` |
+| 4 | 备用（SPI0 / ADC / ATIM …） | 见 `dmac.h` |
+
+devicetree 里每个通道描述符是 `<&dma0 channel slot>`：
+
+```dts
+dma0: dma@40021000 {
+        compatible = "xhsc,hc32a052-dma";
+        reg = <0x40021000 0x400>;
+        interrupts = <4 0>;
+        dma-channels = <5>;
+        #dma-cells = <2>;
+};
+```
+
+驱动把 DDL 的 `BlockSize × TransferCnt` 模型固定成 `BlockSize = 1`、
+`TransferCnt = 字节数`，所以 Zephyr 的 `dma_config/dma_start/reload` 语义可以
+直接映射。**不支持** 循环传输和 gather/scatter（返回 `-ENOTSUP`）：DDL 的
+`DmaMskContinuousTransfer` 在计数耗尽后只保留 ENS 位，完成中断不再按轮次
+触发，没有可靠语义可用。
+
+`dma_get_status()` 的 `pending_length` 由 `CONFA.TC + 1` 换算——TC 存的是
+"传输次数 - 1"，这一点和字面直觉差 1，UART 的接收分段就是靠它算"已收到多少
+字节"。
+
+## PWM
+
+RM 第 15 章。GTIM0/GTIM1 是 16 位向上计数器，各带 2 个比较/捕获通道。
+它们与 BTIM 共用硬件：用 GTIM0 就没有 BTIM0/1/2，用 GTIM1 就没有 BTIM3/4/5，
+驱动在 init 里通过 `Sysctrl_SetFunc()` 声明归属。
+
+驱动在 init 时**固定**计数时钟：取能让 tick ≤ 1 MHz 的最快分频。64 MHz PCLK
+下就是 64 分频 → 1 MHz，一个完整周期最多 65536 tick（65.5 ms），舵机 20 ms
+帧有 1 µs 分辨率，同时 `pwm_get_cycles_per_sec()` 在整个运行期保持不变。
+
+```dts
+pwm0: pwm@40001800 {
+        compatible = "xhsc,hc32a052-gtim";
+        reg = <0x40001800 0x400>;
+        #pwm-cells = <3>;
+        ch0-port = <0>;  /* PA6 = GTIM0_CH0, AF2 */
+        ch0-pin = <6>;
+        ch0-af = <2>;
+};
+```
+
+`pwm_set_cycles()` 的约定：
+
+| 参数 | 行为 |
+| --- | --- |
+| `period_cycles == 0` | 停止输出，引脚强制低 |
+| `pulse_cycles == 0` | 0% 占空比，引脚强制低 |
+| `pulse_cycles >= period_cycles` | 100% 占空比，引脚强制高 |
+| 其他 | `ARR = period - 1`，`CCR = pulse`，反向 PWM 模式 |
+
+反向 PWM（`CNT < CCR` 输出高）是 DDL 里唯一"CCR 直接等于脉宽"的模式，正向模式
+要写 `period - pulse`；`PWM_POLARITY_INVERTED` 时驱动自动换算。
+
+更高频的 PWM（电机驱动、DC-DC）应该上 ATIM，而不是把 GTIM 的分频调低。
+
+## UART DMA
+
+`xhsc,hc32a052-usart` 节点加上 `dmas` / `dma-names` 后，打开
+`CONFIG_UART_ASYNC_API` 就会走 DMA：
+
+```dts
+usart1: usart@40006400 {
+        ...
+        dmas = <&dma0 2 0x42>, <&dma0 3 0x43>;
+        dma-names = "tx", "rx";
+};
+```
+
+- **发送**：DMA 把缓冲区推给 TDR，完成中断再打开 USART 的 TC 中断，
+  `UART_TX_DONE` 只在整个帧（含停止位）移出后才上报。
+- **接收**：DMA 直接写调用者的缓冲区；USART 的"数据帧间定时器"（TOE
+  `Data_Frame` 模式，即 `TOR`）在总线空闲超过 timeout 时产生中断，
+  驱动把"目前收到多少字节"作为一个 `UART_RX_RDY` 上报。因此一帧数据只
+  产生一次事件，不是每字节一次。
+- **缓冲区满**：上报最后一段 → `UART_RX_BUF_RELEASED` →
+  `UART_RX_DISABLED`，由应用重新 `uart_rx_enable()`。
+- `uart_rx_buf_rsp()` 返回 `-ENOTSUP`：DMAC 不能链式切换缓冲，第二个缓冲区
+  只能在第一个释放后重新武装。
+- 没有 `dmas` 或没开 `CONFIG_DMA_HC32` 时，驱动只提供轮询接口，异步接口返回
+  `-ENOTSUP`，控制台仍然正常。
 
 ## 注意
 

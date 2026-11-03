@@ -503,6 +503,7 @@ void Sysctrl_DebugDisable(uint32_t u32DebugModule);
  */
 
 #ifdef __cplusplus
+}
 #endif
 
 #endif /* __SYSCTRL_H__ */

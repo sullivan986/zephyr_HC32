@@ -18,6 +18,7 @@
 		zephyr,shell-uart = &usart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,canbus = &can0;
 	};
 
 	sram0: memory@20000000 {
@@ -46,6 +47,53 @@
 			rx-port = <0>;
 			rx-pin = <10>;
 			rx-af = <1>;
+			dmas = <&dma0 0 0x40>, <&dma0 1 0x41>;
+			dma-names = "tx", "rx";
+		};
+
+		/* USART1: PA2 = TXD (AF1), PA3 = RXD (AF1). */
+		usart1: usart@40006400 {
+			compatible = "xhsc,hc32a052-usart";
+			reg = <0x40006400 0x400>;
+			interrupts = <7 0>;
+			status = "disabled";
+			current-speed = <2000000>;
+			tx-port = <0>;
+			tx-pin = <2>;
+			tx-af = <1>;
+			rx-port = <0>;
+			rx-pin = <3>;
+			rx-af = <1>;
+			dmas = <&dma0 2 0x42>, <&dma0 3 0x43>;
+			dma-names = "tx", "rx";
+		};
+
+		dma0: dma@40021000 {
+			compatible = "xhsc,hc32a052-dma";
+			reg = <0x40021000 0x400>;
+			interrupts = <4 0>;
+			status = "okay";
+			dma-channels = <5>;
+			#dma-cells = <2>;
+		};
+
+		/*
+		 * GTIM0 compare/capture channels for PWM output:
+		 * PA6 = CH0 (AF2), PA7 = CH1 (AF2).
+		 * GTIM0 shares its silicon with BTIM0/1/2, GTIM1 with
+		 * BTIM3/4/5; enabling both is not possible.
+		 */
+		pwm0: pwm@40001800 {
+			compatible = "xhsc,hc32a052-gtim";
+			reg = <0x40001800 0x400>;
+			status = "disabled";
+			#pwm-cells = <3>;
+			ch0-port = <0>;
+			ch0-pin = <6>;
+			ch0-af = <2>;
+			ch1-port = <0>;
+			ch1-pin = <7>;
+			ch1-af = <2>;
 		};
 
 		/*

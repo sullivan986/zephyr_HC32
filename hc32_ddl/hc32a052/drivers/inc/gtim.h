@@ -305,6 +305,7 @@ void Gtim_ClearFlag(GTIM_TypeDef* GTIMx, uint32_t u32IntClrFlag);
  */
 
 #ifdef __cplusplus
+}
 #endif
 
 

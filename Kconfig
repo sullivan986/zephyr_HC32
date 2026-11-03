@@ -73,8 +73,13 @@ config UART_HC32
 	depends on SOC_HC32A052
 	depends on SERIAL
 	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_ASYNC
 	help
 	  Enable the USART driver for XHSC HC32A052 series devices.
+
+	  Polling covers the console. Enabling CONFIG_UART_ASYNC_API and giving
+	  the node "dmas" entries moves TX and RX to the DMAC, with the USART
+	  frame-gap timer delimiting received frames.
 
 config CAN_HC32
 	bool "XHSC HC32A052 CAN driver"
@@ -89,3 +94,28 @@ config CAN_HC32
 	  receive FIFO. Acceptance filters are evaluated in software over a
 	  single hardware filter group in accept-all mode; see the driver
 	  header for why.
+
+config DMA_HC32
+        bool "XHSC HC32A052 DMAC driver"
+        default y
+        depends on SOC_HC32A052
+        depends on DMA
+        help
+          Enable the five channel DMAC driver for XHSC HC32A052 series devices.
+
+          Every channel moves one contiguous block between a fixed width
+          source and destination, triggered by software or by a peripheral
+          request number. Cyclic operation is not supported.
+
+config PWM_HC32
+        bool "XHSC HC32A052 GTIM PWM driver"
+        default y
+        depends on SOC_HC32A052
+        depends on PWM
+        depends on DT_HAS_XHSC_HC32A052_GTIM_ENABLED
+        help
+          Enable the PWM driver built on the GTIM0/GTIM1 16-bit timers.
+
+          The counter clock is fixed at init to the fastest prescaler that
+          keeps the tick at or below 1 MHz, so a full 65.5 ms period fits the
+          auto-reload register with 1 us resolution.

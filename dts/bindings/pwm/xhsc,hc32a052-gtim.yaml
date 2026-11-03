@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  XHSC HC32A052 general purpose timer (GTIM) used as a PWM controller.
+
+  GTIM0 and GTIM1 each provide two compare/capture channels. Selecting them
+  takes the shared silicon away from the BTIM blocks: GTIM0 replaces
+  BTIM0/1/2 and GTIM1 replaces BTIM3/4/5.
+
+  The vendor DDL has no port-mux abstraction, so the pin of every channel is
+  described directly. Port indices follow GPIOA..GPIOD = 0..3. Omit the pin
+  properties for channels that are not routed out.
+
+compatible: "xhsc,hc32a052-gtim"
+
+include: [pwm-controller.yaml, base.yaml]
+
+properties:
+  "#pwm-cells":
+    const: 3
+
+  ch0-port:
+    type: int
+    enum: [0, 1, 2, 3]
+    description: GPIO port of channel 0 (0 = GPIOA).
+
+  ch0-pin:
+    type: int
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    description: Pin number of channel 0 within ch0-port.
+
+  ch0-af:
+    type: int
+    default: 2
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+    description: Alternate function mux value of channel 0.
+
+  ch1-port:
+    type: int
+    enum: [0, 1, 2, 3]
+    description: GPIO port of channel 1 (0 = GPIOA).
+
+  ch1-pin:
+    type: int
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    description: Pin number of channel 1 within ch1-port.
+
+  ch1-af:
+    type: int
+    default: 2
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+    description: Alternate function mux value of channel 1.
+
+pwm-cells:
+  - channel
+  - period
+  - flags

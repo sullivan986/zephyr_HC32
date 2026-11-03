@@ -8,8 +8,10 @@
 #define ZEPHYR_SOC_XHSC_HC32A0_SOC_H_
 
 #include <ddl.h>
+#include <dmac.h>
 #include <flash.h>
 #include <gpio.h>
+#include <gtim.h>
 #include <sysctrl.h>
 #include <usart.h>
 

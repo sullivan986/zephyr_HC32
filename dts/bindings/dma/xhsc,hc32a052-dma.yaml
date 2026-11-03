@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  XHSC HC32A052 direct memory access controller.
+
+  A channel specifier carries the channel index and the peripheral trigger
+  selection value: <&dma0 channel slot>. Use slot 0 for software triggered
+  memory-to-memory transfers, otherwise the DmaUart0TxTrig-style request
+  number from the vendor DDL.
+
+compatible: "xhsc,hc32a052-dma"
+
+include: dma-controller.yaml
+
+properties:
+  dma-channels:
+    required: true
+    description: Number of channels (five on this SoC).
+
+  "#dma-cells":
+    const: 2
+
+dma-cells:
+  - channel
+  - slot

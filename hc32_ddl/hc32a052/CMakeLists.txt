@@ -10,8 +10,8 @@ zephyr_include_directories(
 # Vendor code gets its own library so diagnostics can be relaxed for it only.
 zephyr_library()
 
-# Only the blocks needed to boot, print on USART and toggle GPIO are built.
-# Add more driver sources here (or make them conditional) as drivers land.
+# Only the blocks needed to boot, print on USART and toggle GPIO are built
+# unconditionally. Everything else is pulled in by the driver that uses it.
 zephyr_library_sources(
   drivers/src/ddl.c
   drivers/src/sysctrl.c
@@ -21,6 +21,8 @@ zephyr_library_sources(
 )
 
 zephyr_library_sources_ifdef(CONFIG_CAN_HC32 drivers/src/can.c)
+zephyr_library_sources_ifdef(CONFIG_DMA_HC32 drivers/src/dmac.c)
+zephyr_library_sources_ifdef(CONFIG_PWM_HC32 drivers/src/gtim.c)
 
 # USART_SC_Init() (smart card mode, unused here) leaves a local variable
 # uninitialised on one path. The vendor sources are kept verbatim, so silence
