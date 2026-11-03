@@ -203,6 +203,30 @@ STBY 引脚时删掉 `stby-port` / `stby-pin` 两个属性。
 - **模式**：支持 normal / loopback / listen-only；CAN FD、one-shot 不支持，
   `can_set_mode()` 会返回 `-ENOTSUP`。
 
+### 结构体 ABI（写 CAN 驱动最容易踩的坑）
+
+Zephyr 的 CAN 子系统会**把驱动的 config/data 指针强转**成公共结构体：
+
+```c
+struct can_hc32_config {
+        struct can_driver_config common;   /* 必须是第一个成员 */
+        ...
+};
+struct can_hc32_data {
+        struct can_driver_data common;     /* 必须是第一个成员 */
+        ...
+};
+```
+
+因为 `can_get_bitrate_min/max()`、`can_get_mode()` 直接读 `dev->config` /
+`dev->data` 的头部字段。不按这个布局写，`can_set_bitrate()` 会把
+`regs` 指针、引脚号当成 `min_bitrate` / `max_bitrate` 来比较，结果是对任何
+波特率都返回 `-ENOTSUP`，表现为 `device_is_ready()` 正常但
+`can_start()` 之前就失败（本移植最初就是这样：`CAN: NOT READY`）。
+
+config 用 `CAN_DT_DRIVER_CONFIG_INST_GET(n, min, max)` 初始化，data 里的
+`state_change_callbacks` 要在 init 里 `sys_slist_init()`。
+
 ### 位时序换算
 
 Zephyr 的 `struct can_timing` 是 1-based 的时间量子个数，HC32 寄存器存的是

@@ -55,8 +55,12 @@ struct can_hc32_filter {
   struct can_filter filter;
   bool used;
 };
-
 struct can_hc32_config {
+  /*
+   * Must be the first member: the CAN subsystem upcasts the driver config
+   * to this type to read min_bitrate / max_bitrate and the initial timing.
+   */
+  struct can_driver_config common;
   CAN_TypeDef *regs;
   void (*irq_config_func)(const struct device *dev);
   uint8_t tx_port;
@@ -71,9 +75,13 @@ struct can_hc32_config {
 };
 
 struct can_hc32_data {
+  /* Must be the first member: the subsystem reads mode/started from here. */
+  struct can_driver_data common;
   struct can_hc32_filter filters[CAN_HC32_MAX_FILTERS];
   struct k_spinlock lock;
   struct can_timing timing;
+  /* One free primary transmit buffer, given back on completion or abort. */
+  struct k_sem tx_free;
   /* Pending transmission, guarded by lock. */
   can_tx_callback_t tx_callback;
   void *tx_user_data;
@@ -100,7 +108,8 @@ static void can_hc32_pin_config(uint8_t port, uint8_t pin, uint8_t af,
   stc_gpio_cfg_t cfg = {0};
 
   cfg.enDir = output ? GpioDirOut : GpioDirIn;
-  cfg.enDrv = GpioDrvL;
+  /* CAN_TX at 1 Mbit/s needs the strong driver; RX is an input anyway. */
+  cfg.enDrv = GpioDrvH;
   cfg.enPu = GpioPuDisable;
   cfg.enPd = GpioPdDisable;
   cfg.enOD = GpioOdDisable;
@@ -146,14 +155,20 @@ static int can_hc32_set_timing(const struct device *dev,
 }
 
 static int can_hc32_set_mode(const struct device *dev, can_mode_t mode) {
-  ARG_UNUSED(dev);
+  struct can_hc32_data *data = dev->data;
 
   if ((mode & ~(CAN_MODE_LOOPBACK | CAN_MODE_LISTENONLY)) != 0U) {
     /* CAN FD, one-shot and three-sample are not implemented. */
     return -ENOTSUP;
   }
 
-  /* Applied by can_hc32_start(); the controller is stopped here. */
+  if (data->common.started) {
+    return -EBUSY;
+  }
+
+  /* Applied by can_hc32_start(), which needs the controller in reset. */
+  data->common.mode = mode;
+
   return 0;
 }
 
@@ -176,6 +191,14 @@ static int can_hc32_start(const struct device *dev) {
   init.stcWarningLimit.CanErrorWarningLimitVal = 0x0AU;
 
   CAN_Init(&init);
+
+  if ((data->common.mode & CAN_MODE_LOOPBACK) != 0U) {
+    CAN_ModeConfig(CanInternalLoopBackMode, CanSelfAckDisable, TRUE);
+  }
+  if ((data->common.mode & CAN_MODE_LISTENONLY) != 0U) {
+    CAN_ModeConfig(CanListenOnlyMode, CanSelfAckDisable, TRUE);
+  }
+
   can_hc32_filter_accept_all();
 
   CAN_IrqFlgClr(CanRxIrqFlg);
@@ -187,12 +210,15 @@ static int can_hc32_start(const struct device *dev) {
 
   cfg->irq_config_func(dev);
 
+  data->common.started = true;
+
   return 0;
 }
 
 static int can_hc32_stop(const struct device *dev) {
   struct can_hc32_data *data = dev->data;
   k_spinlock_key_t key;
+  bool pending;
 
   CAN_IrqCmd(CanRxIrqEn, FALSE);
   CAN_IrqCmd(CanTxPrimaryIrqEn, FALSE);
@@ -200,10 +226,45 @@ static int can_hc32_stop(const struct device *dev) {
   CAN_DeInit();
 
   key = k_spin_lock(&data->lock);
+  pending = (data->tx_callback != NULL);
   data->tx_callback = NULL;
   data->tx_user_data = NULL;
   k_spin_unlock(&data->lock, key);
+
+  if (pending) {
+    /* The pending frame is dropped, hand the buffer slot back. */
+    k_sem_give(&data->tx_free);
+  }
+
+  data->common.started = false;
+
   return 0;
+}
+
+/* Release a transmission the controller will never finish. */
+static void can_hc32_abort_tx(const struct device *dev, int err) {
+  struct can_hc32_data *data = dev->data;
+  can_tx_callback_t callback;
+  void *user_data;
+  k_spinlock_key_t key;
+
+  key = k_spin_lock(&data->lock);
+  callback = data->tx_callback;
+  user_data = data->tx_user_data;
+  data->tx_callback = NULL;
+  data->tx_user_data = NULL;
+  k_spin_unlock(&data->lock, key);
+
+  if (callback == NULL) {
+    return;
+  }
+
+  CAN_IrqCmd(CanTxPrimaryIrqEn, FALSE);
+  CAN_TransmitCmd(CanPTBTxAbortCmd);
+  CAN_IrqFlgClr(CanTxPrimaryIrqFlg);
+  k_sem_give(&data->tx_free);
+
+  callback(dev, err, user_data);
 }
 
 static int can_hc32_send(const struct device *dev,
@@ -211,10 +272,6 @@ static int can_hc32_send(const struct device *dev,
                          can_tx_callback_t callback, void *user_data) {
   struct can_hc32_data *data = dev->data;
   stc_can_txframe_t tx = {0};
-  uint32_t start_ms = k_uptime_get_32();
-  uint32_t limit_ms = K_TIMEOUT_EQ(timeout, K_FOREVER)
-                          ? UINT32_MAX
-                          : (uint32_t)k_ticks_to_ms_floor64(timeout.ticks);
 
   if ((frame->flags & ~(CAN_FRAME_IDE | CAN_FRAME_RTR)) != 0U) {
     /* No FD, BRS, ESI or error frames. */
@@ -223,25 +280,35 @@ static int can_hc32_send(const struct device *dev,
   if (frame->dlc > CAN_MAX_DLC) {
     return -EINVAL;
   }
+  if (!data->common.started) {
+    return -ENETDOWN;
+  }
 
-  /* Wait for the primary transmit buffer, which holds a single frame. */
-  while (true) {
+  /*
+   * Wait for the primary transmit buffer. Completion is reported from the
+   * interrupt, so this blocks in the caller's context instead of polling;
+   * a frame that never completes (no ACK on the bus) only costs the caller
+   * its timeout, the buffer itself is recovered by can_hc32_abort_tx().
+   */
+  if (k_sem_take(&data->tx_free, timeout) != 0) {
+    if (CAN_StatusGet(CanBusoff) == TRUE) {
+      can_hc32_abort_tx(dev, -EIO);
+      return -EIO;
+    }
+    return -EAGAIN;
+  }
+
+  if (CAN_StatusGet(CanBusoff) == TRUE) {
+    k_sem_give(&data->tx_free);
+    return -EIO;
+  }
+
+  {
     k_spinlock_key_t key = k_spin_lock(&data->lock);
-    bool free = (data->tx_callback == NULL);
 
-    if (free) {
-      data->tx_callback = callback;
-      data->tx_user_data = user_data;
-    }
+    data->tx_callback = callback;
+    data->tx_user_data = user_data;
     k_spin_unlock(&data->lock, key);
-
-    if (free) {
-      break;
-    }
-    if ((k_uptime_get_32() - start_ms) >= limit_ms) {
-      return -EAGAIN;
-    }
-    k_busy_wait(1U);
   }
 
   tx.StdID = frame->id;
@@ -253,9 +320,12 @@ static int can_hc32_send(const struct device *dev,
 
   CAN_SetFrame(&tx);
   /* Drop a stale completion flag before arming the interrupt, otherwise
-   * it would report this frame as sent before it even started.
+   * it would report this frame as sent before it even started. The flag is
+   * gated by its interrupt enable on this IP, so both are needed even though
+   * the completion is also picked up from the interrupt.
    */
   CAN_IrqFlgClr(CanTxPrimaryIrqFlg);
+  CAN_IrqCmd(CanTxPrimaryIrqEn, TRUE);
   CAN_TransmitCmd(CanPTBTxCmd);
 
   return 0;
@@ -426,6 +496,8 @@ static void can_hc32_isr(const struct device *dev) {
 
     k_spin_unlock(&data->lock, key);
 
+    k_sem_give(&data->tx_free);
+
     if (callback != NULL) {
       callback(dev, 0, user_data);
     }
@@ -439,6 +511,10 @@ static void can_hc32_isr(const struct device *dev) {
 
 static int can_hc32_init(const struct device *dev) {
   const struct can_hc32_config *cfg = dev->config;
+  struct can_hc32_data *data = dev->data;
+
+  sys_slist_init(&data->common.state_change_callbacks);
+  k_sem_init(&data->tx_free, 1, 1);
 
   (void)Sysctrl_SetPeripheralGate(SysctrlPeripheralCAN, TRUE);
 
@@ -497,6 +573,7 @@ static DEVICE_API(can, can_hc32_driver_api) = {
   }                                                                            \
                                                                                \
   static const struct can_hc32_config can_hc32_config_##n = {                  \
+      .common = CAN_DT_DRIVER_CONFIG_INST_GET(n, 0, 1000000),                  \
       .regs = (CAN_TypeDef *)DT_INST_REG_ADDR(n),                              \
       .irq_config_func = can_hc32_irq_config_##n,                              \
       .tx_port = DT_INST_PROP(n, tx_port),                                     \
