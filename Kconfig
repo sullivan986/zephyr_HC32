@@ -1,5 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
+config HC32_CLOCK_PLL
+	bool "Run the core from the PLL at 64 MHz"
+	default y
+	depends on SOC_HC32A052
+	help
+	  Derive HCLK from the internal 12 MHz RCH through the PLL
+	  (12 MHz / 2 * 64 / 6 = 64 MHz).
+
+	  Disable this to stay on the 12 MHz RCH oscillator directly. That
+	  needs no PLL lock and cannot hang waiting for one, which makes it a
+	  useful first bring-up setting: the UART driver computes its baud rate
+	  from the real PCLK, so the console keeps working either way.
+
 config UART_HC32
 	bool "XHSC HC32A052 USART driver"
 	default y

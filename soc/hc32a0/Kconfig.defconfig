@@ -11,8 +11,11 @@ config SOC_EARLY_INIT_HOOK
 config NUM_IRQS
 	default 32
 
-# HCLK after soc_early_init_hook(): 12 MHz RCH / 2 * 64 / 6 = 64 MHz.
+# HCLK after soc_early_init_hook():
+#   HC32_CLOCK_PLL=y -> 12 MHz RCH / 2 * 64 / 6 = 64 MHz
+#   HC32_CLOCK_PLL=n -> 12 MHz RCH directly
 config SYS_CLOCK_HW_CYCLES_PER_SEC
-	default 64000000
+	default 64000000 if HC32_CLOCK_PLL
+	default 12000000
 
 endif # SOC_HC32A052

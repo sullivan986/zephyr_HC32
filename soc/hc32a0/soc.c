@@ -25,6 +25,22 @@ void SystemCoreClockUpdate(void) {
   SystemPCLK = Sysctrl_GetPClkFreq();
 }
 
+/*
+ * The DDL's delay1ms()/delay100us(), which Sysctrl_ClkSourceEnable() calls
+ * before enabling the PLL, busy-wait for SysTick->VAL to change. SysTick is
+ * stopped out of reset, so without this the very first clock-tree call spins
+ * forever and nothing after it ever runs.
+ *
+ * SysTick is started as a free-running counter with the interrupt disabled;
+ * the Zephyr SysTick driver reprograms it at PRE_KERNEL_2.
+ */
+static void hc32_systick_start(void) {
+  SysTick->CTRL = 0U;
+  SysTick->LOAD = 0xFFFFFFU;
+  SysTick->VAL = 0U;
+  SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
+}
+
 #if defined(CONFIG_SOC_EARLY_INIT_HOOK)
 /*
  * Runs from z_cstart() after .data/.bss are set up and before PRE_KERNEL_1
@@ -37,6 +53,9 @@ void SystemCoreClockUpdate(void) {
 void soc_early_init_hook(void) {
   stc_sysctrl_pll_cfg_t pll = {0};
 
+  /* Must come first: every DDL delay below needs a running SysTick. */
+  hc32_systick_start();
+
   (void)Sysctrl_SetRCHTrim(SysctrlRchFreq12MHz);
   (void)Sysctrl_SetRCLTrim(SysctrlRclFreq32768);
   (void)Sysctrl_SetRCLStableTime(SysctrlRclStableCycle256);
@@ -45,6 +64,7 @@ void soc_early_init_hook(void) {
   (void)Sysctrl_SetHCLKDiv(SysctrlHclkDiv1);
   (void)Sysctrl_SetPCLKDiv(SysctrlPclkDiv1);
 
+#if defined(CONFIG_HC32_CLOCK_PLL)
   /* Must be programmed before the core exceeds 48 MHz. */
   (void)Flash_WaitCycle(FlashWaitCycle2);
 
@@ -55,9 +75,15 @@ void soc_early_init_hook(void) {
   pll.u8MullF = 0U;
   pll.u8OutputDiv = 6U;
 
-  (void)Sysctrl_SetPLLFreq(&pll);
-  (void)Sysctrl_ClkSourceEnable(SysctrlClkPLL, TRUE);
-  (void)Sysctrl_SysClkSwitch(SysctrlClkPLL);
+  /* Stay on RCH if the vendor rejects the parameters: a slower but working
+   * clock beats hanging on a PLL that will never lock. */
+  if (Sysctrl_SetPLLFreq(&pll) == Ok) {
+    (void)Sysctrl_ClkSourceEnable(SysctrlClkPLL, TRUE);
+    (void)Sysctrl_SysClkSwitch(SysctrlClkPLL);
+  }
+#else
+  (void)Flash_WaitCycle(FlashWaitCycle0);
+#endif
 
   SystemCoreClockUpdate();
 }

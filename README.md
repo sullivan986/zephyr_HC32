@@ -107,6 +107,15 @@ west build -b hc32a052_stk /path/to/my_app
 
 ## 注意
 
+- **SysTick 必须先跑起来**：DDL 的 `delay1ms()` / `delay100us()` 靠
+  `SysTick->VAL` 变化计时，而 `Sysctrl_ClkSourceEnable(SysctrlClkPLL, ...)`
+  内部就会调 `delay100us()`。SysTick 复位后是停止的，若不在配时钟之前把它当
+  自由计数器启动，**第一条时钟配置就会死循环**，之后什么都不会执行（串口自然
+  没输出）。`soc_early_init_hook()` 第一步调 `hc32_systick_start()` 解决这个
+  问题；Zephyr 的 SysTick 驱动会在 `PRE_KERNEL_2` 重新配置它。
+- `CONFIG_HC32_CLOCK_PLL`（默认 y）控制是否走 PLL 超频到 64 MHz。设为 n 则
+  直接用 12 MHz RCH，不依赖 PLL 锁定，适合首次 bring-up；UART 波特率是按
+  实际 PCLK 计算的，所以两种情况下串口都能正常输出。
 - `soc.c` 里的 `SystemCoreClockUpdate()` 是自己实现的：原厂
   `system_hc32a052.c` 会重写 SysTick 的 LOAD/VAL/CTRL，与 Zephyr 定时器冲突，
   所以那份文件**不编译**。
