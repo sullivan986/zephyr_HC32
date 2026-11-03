@@ -191,18 +191,18 @@ static int can_hc32_start(const struct device *dev) {
 }
 
 static int can_hc32_stop(const struct device *dev) {
-	struct can_hc32_data *data = dev->data;
-	k_spinlock_key_t key;
+  struct can_hc32_data *data = dev->data;
+  k_spinlock_key_t key;
 
-	CAN_IrqCmd(CanRxIrqEn, FALSE);
-	CAN_IrqCmd(CanTxPrimaryIrqEn, FALSE);
-	CAN_IrqCmd(CanBusErrorIrqEn, FALSE);
-	CAN_DeInit();
+  CAN_IrqCmd(CanRxIrqEn, FALSE);
+  CAN_IrqCmd(CanTxPrimaryIrqEn, FALSE);
+  CAN_IrqCmd(CanBusErrorIrqEn, FALSE);
+  CAN_DeInit();
 
-	key = k_spin_lock(&data->lock);
-	data->tx_callback = NULL;
-	data->tx_user_data = NULL;
-	k_spin_unlock(&data->lock, key);
+  key = k_spin_lock(&data->lock);
+  data->tx_callback = NULL;
+  data->tx_user_data = NULL;
+  k_spin_unlock(&data->lock, key);
   return 0;
 }
 
@@ -252,10 +252,10 @@ static int can_hc32_send(const struct device *dev,
   tx.enBufferSel = CanPTBSel;
 
   CAN_SetFrame(&tx);
-	/* Drop a stale completion flag before arming the interrupt, otherwise
-	 * it would report this frame as sent before it even started.
-	 */
-	CAN_IrqFlgClr(CanTxPrimaryIrqFlg);
+  /* Drop a stale completion flag before arming the interrupt, otherwise
+   * it would report this frame as sent before it even started.
+   */
+  CAN_IrqFlgClr(CanTxPrimaryIrqFlg);
   CAN_TransmitCmd(CanPTBTxCmd);
 
   return 0;
