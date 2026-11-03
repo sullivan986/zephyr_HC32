@@ -14,4 +14,15 @@
 
 add_subdirectory_ifdef(CONFIG_SOC_HC32A052 hc32_ddl/hc32a052)
 
-zephyr_library_sources_ifdef(CONFIG_UART_HC32 drivers/serial/uart_hc32.c)
+# Zephyr creates the drivers__serial library unconditionally when CONFIG_SERIAL
+# is enabled, and then warns about it being empty if no in-tree UART driver is
+# selected. Hang the source on that library when it exists so an out-of-tree
+# driver does not leave a dangling empty target; fall back to a module library
+# otherwise (e.g. if CONFIG_SERIAL was off and the target was never created).
+if(CONFIG_UART_HC32)
+  if(TARGET drivers__serial)
+    target_sources(drivers__serial PRIVATE drivers/serial/uart_hc32.c)
+  else()
+    zephyr_library_sources(drivers/serial/uart_hc32.c)
+  endif()
+endif()
