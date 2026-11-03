@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  XHSC HC32A052 on-chip CAN controller.
+
+  The vendor DDL has no pinctrl integration, so the pin routing is described
+  directly. Port indices follow GPIOA..GPIOD = 0..3.
+
+  The optional stby-port/stby-pin pair drives the transceiver standby input
+  (the reference board uses PA8 and enables the transceiver by driving it low).
+  Omit both if the transceiver is hard-wired for normal mode.
+
+compatible: "xhsc,hc32a052-can"
+
+include: can-controller.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  tx-port:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3]
+    description: GPIO port of the CAN_TX pin (0 = GPIOA).
+
+  tx-pin:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    description: CAN_TX pin number within tx-port.
+
+  tx-af:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+    description: Alternate function mux value for CAN_TX (PA11 is AF4).
+
+  rx-port:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3]
+    description: GPIO port of the CAN_RX pin (0 = GPIOA).
+
+  rx-pin:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    description: CAN_RX pin number within rx-port.
+
+  rx-af:
+    type: int
+    required: true
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+    description: Alternate function mux value for CAN_RX (PA12 is AF4).
+
+  stby-port:
+    type: int
+    enum: [0, 1, 2, 3]
+    description: GPIO port of the transceiver standby pin.
+
+  stby-pin:
+    type: int
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    description: Transceiver standby pin number within stby-port.
+
+examples:
+  - |
+    &can0 {
+        status = "okay";
+        bitrate = <500000>;
+        tx-port = <0>;   /* PA11, AF4 */
+        tx-pin = <11>;
+        tx-af = <4>;
+        rx-port = <0>;   /* PA12, AF4 */
+        rx-pin = <12>;
+        rx-af = <4>;
+        stby-port = <0>; /* PA8, driven low to enable the transceiver */
+        stby-pin = <8>;
+    };

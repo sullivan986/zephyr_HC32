@@ -20,6 +20,8 @@ zephyr_library_sources(
   drivers/src/usart.c
 )
 
+zephyr_library_sources_ifdef(CONFIG_CAN_HC32 drivers/src/can.c)
+
 # USART_SC_Init() (smart card mode, unused here) leaves a local variable
 # uninitialised on one path. The vendor sources are kept verbatim, so silence
 # the diagnostic instead of patching them.

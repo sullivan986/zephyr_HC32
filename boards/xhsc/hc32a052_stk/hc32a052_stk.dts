@@ -47,6 +47,28 @@
 			rx-pin = <10>;
 			rx-af = <1>;
 		};
+
+		/*
+		 * CAN: PA11 = CAN_TX (AF4), PA12 = CAN_RX (AF4),
+		 * PA8 = transceiver STBY (driven low to enable).
+		 * Disabled by default; enable it from an overlay once a
+		 * transceiver is wired up.
+		 */
+		can0: can@40030000 {
+			compatible = "xhsc,hc32a052-can";
+			reg = <0x40030000 0x100>;
+			interrupts = <28 0>;
+			status = "disabled";
+			bitrate = <500000>;
+			tx-port = <0>;
+			tx-pin = <11>;
+			tx-af = <4>;
+			rx-port = <0>;
+			rx-pin = <12>;
+			rx-af = <4>;
+			stby-port = <0>;
+			stby-pin = <8>;
+		};
 	};
 };
 

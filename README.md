@@ -57,12 +57,15 @@ zephyr_HC32/
 │       └── hc32a052_stk.dts          128K Flash / 16K SRAM / USART0
 ├── dts/bindings/
 │   ├── vendor-prefixes.txt           补上 zephyr 树里没有的 xhsc 前缀
-│   └── serial/xhsc,hc32a052-usart.yaml
+│   ├── serial/xhsc,hc32a052-usart.yaml
+│   └── can/xhsc,hc32a052-can.yaml
 └── drivers/
-    └── serial/uart_hc32.c            Zephyr UART 驱动（轮询）
+    ├── serial/uart_hc32.c            Zephyr UART 驱动（轮询）
+    └── can/can_hc32.c                Zephyr CAN 驱动
 ```
 
-当前的驱动与 SoC 支持矩阵：只有 **HC32A052**，目前只有 **UART（轮询）**。
+当前的驱动与 SoC 支持矩阵：只有 **HC32A052**，目前有 **UART（轮询）** 和
+**CAN（经典 CAN 2.0A/B）**。
 
 ## 在新项目里复用
 
@@ -152,6 +155,64 @@ XTH 8 MHz / 1 -> PLL x64 = 512 MHz -> /8 = 64 MHz HCLK = PCLK
 
 `SYSTEM_XTH` 由 `CMakeLists.txt` 依据 Kconfig 自动传给 DDL
 （`Sysctrl_GetHClkFreq()` 靠它换算 HCLK），改晶振频率不需要手工同步任何宏。
+
+## CAN
+
+`compatible = "xhsc,hc32a052-can"`，寄存器基址 `0x40030000`，IRQ 28。
+
+### 硬件事实（RM 第 21 章）
+
+- 经典 CAN 2.0A/B，8 字节数据，不支持 CAN FD
+- 1 个发送主缓冲（PTB）+ 4 深副缓冲（STB），1 个接收 FIFO，8 组验收滤波器
+- 位时序：`TQ = (PRESC+1)/f_can`，`BT = ((SEG_1+2)+(SEG_2+1)) × TQ`
+- 约束：`SEG_1` 0..63、`SEG_2` 0..7、`SJW` 0..7，且 `SEG_1 ≥ SEG_2+1`、`SEG_2 ≥ SJW`
+- 控制器时钟就是 **PCLK**，没有独立分频；`can_get_core_clock()` 直接返回
+  `Sysctrl_GetPClkFreq()`
+- 滤波器 `AIDEE=0` 表示标准/扩展帧都收，`AMASK=0` 表示 ID 全匹配
+
+### 引脚
+
+| 信号 | 引脚 | 复用 | 说明 |
+|---|---|---|---|
+| CAN_TX | PA11 | AF4 | 也可 PB09，AF5 |
+| CAN_RX | PA12 | AF4 | 也可 PB08，AF3 |
+| CAN_STBY | PA8 | GPIO | 拉低使能收发器 |
+
+`can0` 节点默认 `status = "disabled"`，因为板上不一定焊了收发器。在 app 的
+overlay 里打开即可（参考 `HC32_TEST/boards/hc32a052_stk.overlay`）。没有
+STBY 引脚时删掉 `stby-port` / `stby-pin` 两个属性。
+
+### 驱动能力与取舍
+
+- **发送**：走 PTB（最高优先级），`can_send()` 在 PTB 空闲前按 `timeout` 等待，
+  发送完成在中断里回调 `can_tx_callback_t`，因此非阻塞。
+  只支持到 `dlc = 8`，`CAN_FRAME_IDE` / `CAN_FRAME_RTR`。
+- **接收**：中断里清空 RB FIFO，逐帧分发给软件滤波器。
+- **滤波器**：**用软件实现**，硬件只开一组"全收"。
+  原因是 8 组硬件滤波器只能形成并集，而 Zephyr 的每个 filter 是独立的
+  `(id, mask)` 对；把硬件组一对一映射会让"其余全部接受"的过滤条件
+  也吃掉前面已经被别的组接受过的帧，语义对不上。驱动最多跟踪 8 个软件
+  滤波器，超出返回 `-ENOMEM`。
+- **错误状态**：`can_get_state()` 读 TECNT/RECNT 与 bus-off、error-passive
+  标志，可返回 error-active / warning / passive / bus-off。
+  打开了 `CONFIG_CAN_MANUAL_RECOVERY_MODE` 时 `recover` 会重新初始化控制器。
+- **模式**：支持 normal / loopback / listen-only；CAN FD、one-shot 不支持，
+  `can_set_mode()` 会返回 `-ENOTSUP`。
+
+### 位时序换算
+
+Zephyr 的 `struct can_timing` 是 1-based 的时间量子个数，HC32 寄存器存的是
+"值减一"：
+
+```
+SEG_1 = prop_seg + phase_seg1 - 1
+SEG_2 = phase_seg2 - 1
+SJW   = sjw - 1
+PRESC = prescaler - 1
+```
+
+两种编码的位时间长度一致（`1 + prop + phase1 + phase2 == SEG_1 + SEG_2 + 3`），
+所以直接用 `can_set_bitrate()` 即可，不需要手工算寄存器值。
 
 ## 注意
 

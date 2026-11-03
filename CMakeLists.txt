@@ -28,15 +28,24 @@ else()
 endif()
 zephyr_compile_definitions(SYSTEM_XTH=${HC32_SYSTEM_XTH})
 
-# Zephyr creates the drivers__serial library unconditionally when CONFIG_SERIAL
-# is enabled, and then warns about it being empty if no in-tree UART driver is
-# selected. Hang the source on that library when it exists so an out-of-tree
-# driver does not leave a dangling empty target; fall back to a module library
-# otherwise (e.g. if CONFIG_SERIAL was off and the target was never created).
+# Zephyr creates the drivers__serial and drivers__can libraries unconditionally
+# when CONFIG_SERIAL / CONFIG_CAN is enabled, and then warns about them being
+# empty if no in-tree driver is selected. Hang the sources on those libraries
+# when they exist so an out-of-tree driver does not leave a dangling empty
+# target; fall back to a module library otherwise (e.g. if the target was never
+# created).
 if(CONFIG_UART_HC32)
   if(TARGET drivers__serial)
     target_sources(drivers__serial PRIVATE drivers/serial/uart_hc32.c)
   else()
     zephyr_library_sources(drivers/serial/uart_hc32.c)
+  endif()
+endif()
+
+if(CONFIG_CAN_HC32)
+  if(TARGET drivers__can)
+    target_sources(drivers__can PRIVATE drivers/can/can_hc32.c)
+  else()
+    zephyr_library_sources(drivers/can/can_hc32.c)
   endif()
 endif()
