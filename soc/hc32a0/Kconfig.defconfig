@@ -12,7 +12,7 @@ config NUM_IRQS
 	default 32
 
 # HCLK after soc_early_init_hook():
-#   HC32_CLOCK_PLL=y -> 12 MHz RCH / 2 * 64 / 6 = 64 MHz
+#   HC32_CLOCK_PLL=y -> 64 MHz, from XTH or RCH depending on HC32_CLOCK_SRC
 #   HC32_CLOCK_PLL=n -> 12 MHz RCH directly
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default 64000000 if HC32_CLOCK_PLL

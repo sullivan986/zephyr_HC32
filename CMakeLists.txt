@@ -14,6 +14,20 @@
 
 add_subdirectory_ifdef(CONFIG_SOC_HC32A052 hc32_ddl/hc32a052)
 
+# The vendor DDL derives the reported HCLK frequency from SYSTEM_XTH, so the
+# crystal frequency has to reach it as a compile definition. Default to 8 MHz
+# when the PLL is disabled and the crystal is not used at all.
+if(CONFIG_HC32_XTH_12MHZ)
+  set(HC32_SYSTEM_XTH 12000000)
+elseif(CONFIG_HC32_XTH_16MHZ)
+  set(HC32_SYSTEM_XTH 16000000)
+elseif(CONFIG_HC32_XTH_24MHZ)
+  set(HC32_SYSTEM_XTH 24000000)
+else()
+  set(HC32_SYSTEM_XTH 8000000)
+endif()
+zephyr_compile_definitions(SYSTEM_XTH=${HC32_SYSTEM_XTH})
+
 # Zephyr creates the drivers__serial library unconditionally when CONFIG_SERIAL
 # is enabled, and then warns about it being empty if no in-tree UART driver is
 # selected. Hang the source on that library when it exists so an out-of-tree

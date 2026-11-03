@@ -47,7 +47,7 @@ zephyr_HC32/
 │       ├── soc.yml                   family xhsc / series hc32a0 / soc hc32a052
 │       ├── Kconfig.soc               select ARM, CPU_CORTEX_M0PLUS, ...
 │       ├── Kconfig.defconfig         NUM_IRQS / SYS_CLOCK_HW_CYCLES_PER_SEC
-│       ├── soc.h, soc.c              CMSIS 时钟符号 + 64 MHz 时钟初始化
+│       ├── soc.h, soc.c              CMSIS 时钟符号 + 64 MHz 时钟初始化（XTH）
 │       └── CMakeLists.txt
 ├── boards/
 │   └── xhsc/hc32a052_stk/            STK-HC32A052
@@ -62,7 +62,7 @@ zephyr_HC32/
     └── serial/uart_hc32.c            Zephyr UART 驱动（轮询）
 ```
 
-当前的驱动与 SoC 支持矩阵：只有 **HC32A052**，只有 **UART（轮询）**。
+当前的驱动与 SoC 支持矩阵：只有 **HC32A052**，目前只有 **UART（轮询）**。
 
 ## 在新项目里复用
 
@@ -105,6 +105,54 @@ west build -b hc32a052_stk /path/to/my_app
 3. `boards/<vendor>/` 加板级目录。
 4. 顶层 `CMakeLists.txt` 加一行 `add_subdirectory_ifdef(CONFIG_SOC_<new> ...)`。
 
+## 时钟
+
+`soc_early_init_hook()`（在 `.data/.bss` 之后、`PRE_KERNEL_1` 驱动之前）把时钟配成
+**64 MHz**，默认用**外部晶振 XTH**：
+
+```
+XTH 8 MHz / 1 -> PLL x64 = 512 MHz -> /8 = 64 MHz HCLK = PCLK
+```
+
+选外部晶振是因为内部 RCH 只校准到几个百分点，而 CAN 位时序要求整条总线两端的时钟
+偏差加起来不超过 ±1%，RCH 根本不够；串口波特率也会随温度漂移。
+
+### Kconfig
+
+| 选项 | 默认 | 说明 |
+|---|---|---|
+| `HC32_CLOCK_PLL` | y | n = 停在 12 MHz RCH，完全不碰 PLL |
+| `HC32_CLOCK_SRC_XTH` / `_RCH` | XTH | PLL 的参考源 |
+| `HC32_XTH_8MHZ` / `_12MHZ` / `_16MHZ` / `_24MHZ` | 8 MHz | 板上晶振频率 |
+
+`hc32a052_stk` 板载 **8 MHz**，默认无需改动。
+
+### 为什么只有这 4 个频率可选
+
+原厂 `Sysctrl_SetPLLFreq()` 强制 `384 MHz <= FVCO = fin * mul_n <= 512 MHz`，
+输出又必须是 64 MHz，所以每个晶振只有特定组合成立：
+
+| XTH | in_div | mul_n | out_div | FVCO | 输出 |
+|---|---|---|---|---|---|
+| 8 MHz | 1 | 64 | 8 | 512 MHz | 64 MHz |
+| 12 MHz | 2 | 64 | 6 | 384 MHz | 64 MHz |
+| 16 MHz | 2 | 64 | 8 | 512 MHz | 64 MHz |
+| 24 MHz | 2 | 32 | 6 | 384 MHz | 64 MHz |
+
+20 MHz 之类无法整数倍频出 64 MHz，所以没有列出。
+
+### 带回退的时钟启动
+
+原厂 `Sysctrl_ClkSourceEnable(SysctrlClkXTH, ...)` **无超时**地轮询起振状态位，
+没有晶振或晶振损坏会直接卡死。本移植改为有上限的轮询：
+
+- 晶振起振失败 → 回退到以 RCH 为参考的 PLL（仍是 64 MHz），`hc32_xth_ok` 置 0；
+- PLL 锁定失败 → 回退到 12 MHz RCH；
+- 都不会死机，应用可读 `extern uint8_t hc32_xth_ok;` 判断晶振是否正常。
+
+`SYSTEM_XTH` 由 `CMakeLists.txt` 依据 Kconfig 自动传给 DDL
+（`Sysctrl_GetHClkFreq()` 靠它换算 HCLK），改晶振频率不需要手工同步任何宏。
+
 ## 注意
 
 - **SysTick 必须先跑起来**：DDL 的 `delay1ms()` / `delay100us()` 靠
@@ -113,9 +161,9 @@ west build -b hc32a052_stk /path/to/my_app
   自由计数器启动，**第一条时钟配置就会死循环**，之后什么都不会执行（串口自然
   没输出）。`soc_early_init_hook()` 第一步调 `hc32_systick_start()` 解决这个
   问题；Zephyr 的 SysTick 驱动会在 `PRE_KERNEL_2` 重新配置它。
-- `CONFIG_HC32_CLOCK_PLL`（默认 y）控制是否走 PLL 超频到 64 MHz。设为 n 则
-  直接用 12 MHz RCH，不依赖 PLL 锁定，适合首次 bring-up；UART 波特率是按
-  实际 PCLK 计算的，所以两种情况下串口都能正常输出。
+- 时钟源默认是**外部晶振 XTH**，见下面「时钟」一节。`CONFIG_HC32_CLOCK_PLL=n`
+  时直接用 12 MHz RCH、不走 PLL，适合首次 bring-up；UART 波特率是按实际 PCLK
+  计算的，所以各配置下串口都能正常输出。
 - `soc.c` 里的 `SystemCoreClockUpdate()` 是自己实现的：原厂
   `system_hc32a052.c` 会重写 SysTick 的 LOAD/VAL/CTRL，与 Zephyr 定时器冲突，
   所以那份文件**不编译**。

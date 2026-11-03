@@ -1,17 +1,71 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config HC32_CLOCK_PLL
-	bool "Run the core from the PLL at 64 MHz"
+	bool "Run the core at 64 MHz from the PLL"
 	default y
 	depends on SOC_HC32A052
 	help
-	  Derive HCLK from the internal 12 MHz RCH through the PLL
-	  (12 MHz / 2 * 64 / 6 = 64 MHz).
+	  12 MHz RCH / 2 * 64 / 6 = 64 MHz, or XTH / n * m / k = 64 MHz when the
+	  external crystal is selected below.
 
-	  Disable this to stay on the 12 MHz RCH oscillator directly. That
-	  needs no PLL lock and cannot hang waiting for one, which makes it a
-	  useful first bring-up setting: the UART driver computes its baud rate
-	  from the real PCLK, so the console keeps working either way.
+	  Disable this to stay on the 12 MHz RCH oscillator directly. That needs
+	  no PLL lock and cannot hang waiting for one, which makes it a useful
+	  first bring-up setting: the UART driver computes its baud rate from the
+	  real PCLK, so the console keeps working either way.
+
+if HC32_CLOCK_PLL
+
+choice HC32_CLOCK_SRC
+	prompt "PLL reference clock"
+	default HC32_CLOCK_SRC_XTH
+	help
+	  Clock feeding the PLL.
+
+	  The external crystal is preferred for anything timing sensitive: the
+	  internal RCH is only trimmed to a few percent, which is not good
+	  enough for CAN bit timing (a 1% budget covers both ends of the bus)
+	  nor for a stable UART baud rate over temperature.
+
+config HC32_CLOCK_SRC_XTH
+	bool "External crystal (XTH)"
+
+config HC32_CLOCK_SRC_RCH
+	bool "Internal 12 MHz RC oscillator (RCH)"
+
+endchoice
+
+if HC32_CLOCK_SRC_XTH
+
+choice HC32_XTH_FREQ
+	prompt "XTH crystal frequency"
+	default HC32_XTH_8MHZ
+	help
+	  Frequency of the crystal fitted on the board. Only the combinations
+	  below keep the PLL voltage controlled oscillator inside the range the
+	  vendor driver accepts (384..512 MHz) while producing exactly 64 MHz:
+
+	      8 MHz / 1 * 64 / 8 = 64 MHz
+	     12 MHz / 2 * 64 / 6 = 64 MHz
+	     16 MHz / 2 * 64 / 8 = 64 MHz
+	     24 MHz / 2 * 32 / 6 = 64 MHz
+
+config HC32_XTH_8MHZ
+	bool "8 MHz"
+
+config HC32_XTH_12MHZ
+	bool "12 MHz"
+
+config HC32_XTH_16MHZ
+	bool "16 MHz"
+
+config HC32_XTH_24MHZ
+	bool "24 MHz"
+
+endchoice
+
+endif # HC32_CLOCK_SRC_XTH
+
+endif # HC32_CLOCK_PLL
 
 config UART_HC32
 	bool "XHSC HC32A052 USART driver"
